@@ -1,0 +1,76 @@
+name: CI Pipeline
+
+on:
+  - push
+  - pull_request
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - stable
+          - oldstable
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
+          cache: true
+
+      - name: Install Go dependencies
+        if: hashFiles('go.mod') != ''
+        run: go mod download
+
+      - name: Check Go formatting
+        if: hashFiles('go.mod') != ''
+        run: test -z "$(gofmt -l .)"
+
+      - name: Run Go linter
+        if: hashFiles('go.mod') != ''
+        run: go vet ./...
+
+      - name: Build Go packages
+        if: hashFiles('go.mod') != ''
+        run: go test ./... -run '^$'
+
+      - name: Run Go tests
+        if: hashFiles('go.mod') != ''
+        run: go test ./...
+
+      - name: Record Go results
+        if: always()
+        shell: bash
+        run: |
+          {
+            printf '| Step | Outcome |\n'
+            printf '|---|---|\n'
+            printf '| Checkout | %s |\n' "$STEP_CHECKOUT_OUTCOME"
+            printf '| Go setup | %s |\n' "$STEP_SETUP_GO_OUTCOME"
+            printf '| Go dependencies | %s |\n' "$STEP_GO_DEPS_OUTCOME"
+            printf '| Go formatting | %s |\n' "$STEP_GO_FORMAT_OUTCOME"
+            printf '| Go linter | %s |\n' "$STEP_GO_LINTER_OUTCOME"
+            printf '| Go build | %s |\n' "$STEP_GO_BUILD_OUTCOME"
+            printf '| Go tests | %s |\n' "$STEP_GO_TESTS_OUTCOME"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          STEP_CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          STEP_SETUP_GO_OUTCOME: ${{ steps.setup-go.outcome }}
+          STEP_GO_DEPS_OUTCOME: ${{ steps.go-deps.outcome }}
+          STEP_GO_FORMAT_OUTCOME: ${{ steps.go-format.outcome }}
+          STEP_GO_LINTER_OUTCOME: ${{ steps.go-linter.outcome }}
+          STEP_GO_BUILD_OUTCOME: ${{ steps.go-build.outcome }}
+          STEP_GO_TESTS_OUTCOME: ${{ steps.go-tests.outcome }}
